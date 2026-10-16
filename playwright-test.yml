@@ -1,0 +1,75 @@
+parameters:
+- name: azureSubscription
+  type: string
+- name: UITestPattern
+  type: string
+  default: '.*'
+- name: TestFolderPath
+  type: string
+  default: 'ui-tests'
+
+steps:
+- template: playwright-test.yml@templates
+  parameters:
+    azureSubscription: ${{ parameters.azureSubscription }}
+    useAllpayNpmFeed: true
+    uiTestPattern: ${{ parameters.UITestPattern }}
+    testFolderPath: ${{ parameters.TestFolderPath }}
+    playwrightWorkspaceName: 'clientportal'
+    maxWorkers: 8
+    runAllBrowsersInMain: false
+    preTestTasks:
+    - task: AzurePowerShell@5
+      displayName: 'Create Environment File'
+      inputs:
+        azureSubscription: ${{ parameters.azureSubscription }}
+        azurePowerShellVersion: 'LatestVersion'
+        ScriptType: 'InlineScript'
+        pwsh: true
+        Inline: |
+          $testsFolder = Get-ChildItem -Path "$(Build.SourcesDirectory)" `
+                                       -Filter ${{ parameters.TestFolderPath }} `
+                                       -Recurse `
+                                       | Select-Object -First 1
+
+          cd $testsFolder.FullName
+
+          $environment = "$(ThreeCharacterEnvironmentName)"
+          $env:NODE_ENV = $environment
+          $sourcesDirectory = "$(Build.SourcesDirectory)"
+
+          Write-Host "Creating environment file .env.$environment for environment: $environment"
+          Write-Host "NODE_ENV is set to $env:NODE_ENV"
+
+          $envContent = @"
+          ENVIRONMENT="$($environment)01"
+          BRANCH_ALIAS="$(branchAlias)"
+          APP_USERNAME='$(Playwright_AppUserName)'
+          PASSWORD='$(Playwright_AppPassword)'
+          BASE_URL="$(ClientPortalBaseUrl)"
+          IDENTITY_URL="$(IdentityServiceUrl)"
+
+          TESTDATA_CLIENTCODE="$(Playwright_TestData_ClientCode)"
+          TESTDATA_PSCLIENTCODE="$(Playwright_TestData_PSClientCode)"
+          TESTDATA_VCLIENTCODE="$(Playwright_TestData_VClientCode)"
+
+          TESTDATA_FIRSTNAME="$(Playwright_TestData_FirstName)"
+          TESTDATA_LASTNAME="$(Playwright_TestData_LastName)"
+          TESTDATA_EMAIL="$(Playwright_TestData_Email)"
+          TESTDATA_shouldPaperlessScriptBeVisible="$(Playwright_TestData_ShouldPaperlessScriptBeVisible)"
+          TESTDATA_DDReference="$(Playwright_TestData_DDReference)"
+
+          TESTDATA_ALLPAYACCOUNTNUMBER = "$(Playwright_TestData_AllpayAccountNumber)"
+          TESTDATA_PAYMENTCELLINDEX = "$(Playwright_TestData_PaymentCellIndex)"
+          TESTDATA_FILE = "$(Playwright_TestData_Valid_FileName)"
+          TESTDATA_PATH = "$($sourcesDirectory)\$(Playwright_TestData_FilePath)"
+          TESTDATA_INVALIDFILE = "$(Playwright_TestData_Invalid_FileName)"
+
+          TESTDATA_REQUESTREASON="$(Playwright_TestData_RequestReason)"
+          TESTDATA_ONGOINGOPTION="$(Playwright_TestData_OngoingOption)"
+          TESTDATA_FREQUENCYOPTION="$(Playwright_TestData_FrequencyOption)"
+          "@ 
+
+          $envContent | Set-Content ".\environments\.env.$environment" 
+          Write-Host "Created environment file : "
+          Get-Content ".\environments\.env.$environment"

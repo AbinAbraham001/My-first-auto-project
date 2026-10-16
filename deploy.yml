@@ -1,0 +1,49 @@
+parameters:
+- name: azureSubscription
+  type: string
+  default: ''
+- name: environment
+  type: string
+- name: machineTag
+  type: string
+- name: VirtualApplication
+  type: string
+  default: 'ClientPortalCloud'
+- name: WebsiteName
+  default: 'Default Web Site'
+
+jobs:
+- template: select-agent/select-agent.yml@templates
+  parameters:
+    outPutVariableName: 'AGENT_NAME'
+    azureSubscription: ${{ parameters.azureSubscription }}
+
+- deployment: IISRelease
+  displayName: '[IIS Deploy (deploy.yml)]'
+  dependsOn: AGENT_NAME
+  environment:
+    name: ${{ parameters.environment }}
+    tags: ${{ parameters.machineTag }}
+    resourceType: VirtualMachine
+  variables:
+    location: 'uksouth'
+    selectedAgent: $[ dependencies.AGENT_NAME.outputs['AGENT_NAME.AGENT_NAME'] ]
+  pool: 
+    name: $(selectedAgent)
+  workspace:
+    clean: all
+  strategy:
+    runOnce:
+      deploy:
+        steps:
+          - download: fat-antelope-xml-diff
+          - template: get-pipeline-artifact.yml@templates
+          - powershell: |
+              Get-ChildItem -Recurse;
+            workingDirectory: $(Pipeline.Workspace)
+            displayName: 'Get WD'
+          - template: iis-deploy.yml@templates
+            parameters:
+              VirtualApplication: ${{ parameters.VirtualApplication }}
+              PackagePath: '$(System.ArtifactsDirectory)/drop/ClientPortalWebsite/_PublishedWebsites/ClientPortalWebsite'
+              WebsiteName: ${{ parameters.WebsiteName }}

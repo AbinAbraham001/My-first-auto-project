@@ -1,0 +1,313 @@
+# Azure Pipelines YAML for Client Portal
+# This pipeline builds, tests, and deploys the Client Portal application to multiple environments (PreDemo, PreUAT, Staging, Production, Training)
+# It uses templates for build and deployment steps, and controls deployment flow based on branch and manual parameters.
+
+name: 2.7.2.$(rev:rr)-$(Build.SourceBranchName)
+
+# Trigger configuration: Exclude main, develop, and feature branches from CI builds
+trigger:
+  branches:
+    exclude:
+      - feature/*
+      - main
+      - main-new
+      - develop
+
+  paths:
+    exclude:
+      - README.md
+      - azure-pipelines.yml
+      - deploy.yml
+
+# Variable group for dependency scanning
+variables:
+  - group: 'Dependency Track Consumer Pipeline'
+  - group: 'allpay-common'
+
+# Pipeline parameters for controlling deployment behavior
+parameters:
+  - name: DeployToTraining
+    displayName: Include training in deployment
+    type: boolean
+    default: 'false'
+  - name: ForceDeployTraining
+    displayName: Force deploy to Training only (without depending on deploying to Production first)
+    type: boolean
+    default: 'false'
+  - name: UseLastBuild
+    displayName: Use the last run build
+    type: boolean
+    default: 'false'
+  - name: UITestPattern
+    displayName: UI Test Filter Pattern (Regex) - Default runs all tests
+    type: string
+    default: '.*'
+
+# External pipeline and repository resources
+resources:
+  pipelines:
+    - pipeline: fat-antelope-xml-diff
+      source: fat-antelope-xml-diff
+  repositories:
+    - repository: templates
+      type: git
+      name: "allpay/common-templates"
+      ref: "refs/heads/master"
+    - repository: variables
+      type: git
+      name: "allpay/common-variables"
+    - repository: oneclick
+      type: git
+      name: "allpay/directdebit-release"
+      ref: "refs/heads/main"
+
+# Main pipeline stages
+stages:
+  # Build stage: compiles, analyzes, and packages the solution
+  - stage: build
+    pool:
+      vmImage: 'windows-2025'
+    jobs:
+      - template: build-setup.yml@templates
+        parameters:
+          UseLastBuild: ${{ parameters.UseLastBuild }}
+          BuildSteps:
+            - template: netframework-build-nuget.yml@templates
+              parameters:
+                nugetConfigFile: NuGet.Config
+                sonarcloudProjectKey: 'allpayClientPortal'
+                sonarcloudProjectName: 'allpayClientPortal'
+                projectsToTest: '**/*.Tests.dll'
+                runTests: true
+                projectsToBuild: 'ClientPortal.sln'
+                zipAfterPublish: false
+                runSettingsFile: '$(Build.SourcesDirectory)/coverage.runsettings'
+                preArtifactPublish:
+                  - task: CmdLine@2
+                    displayName: 'List drop files'
+                    inputs:
+                      script: |
+                        dir /b /s
+                      workingDirectory: '$(System.ArtifactsDirectory)'
+
+  # Deploy to PreDemo environment
+  - stage: Deploy_DDRWPreDemo
+    dependsOn: [build]
+    condition: succeeded()
+    variables:
+      - group: ManageIISTrue
+      - group: ClientPortalPREDEMO
+    jobs:
+      - template: deploy.yml
+        parameters:
+          azureSubscription: 'allpay-DEV01'
+          environment: 'direct-debit-envs'
+          machineTag: 'DDRWPreDemo'
+
+  # Deploy to DV_MVI_DDRW002 environment
+  - stage: Deploy_DV_MVI_DDRW002
+    dependsOn: [build]
+    condition: succeeded()
+    variables:
+      - group: ManageIISTrue
+      - group: ClientPortalPREDEMO
+    jobs:
+      - template: deploy.yml
+        parameters:
+          azureSubscription: 'allpay-DEV01'
+          environment: 'direct-debit-envs'
+          machineTag: 'DV-MVI-DDRW002'
+
+  # Deploy to PreUAT after PreDemo
+  - stage: Deploy_DDRWPreUAT
+    dependsOn: Deploy_DDRWPreDemo
+    condition: succeeded()
+    variables:
+      - group: ManageIISTrue
+      - group: ClientPortalPREUAT
+    jobs:
+      - template: deploy.yml
+        parameters:
+          azureSubscription: 'allpay-QUA01'
+          environment: 'dd-qa-servers'
+          machineTag: 'DDRWPreUat'
+
+  # PreUat Playwright Tests
+  - stage: Test_PreUat_Playwright
+    displayName: 'Playwright Tests - PreUat'
+    variables:
+      - group: ClientPortalPREUAT
+      - name: CI
+        value: 'true'
+    dependsOn: [build, Deploy_DDRWPreUAT]
+    condition: succeeded()
+    jobs:
+      - job: 'uiTests'
+        pool:
+          name: 'allpay-dss-uks-nonprod-large'
+        steps:
+          - template: playwright-test.yml
+            parameters:
+              azureSubscription: 'allpay-QUA01'
+              UITestPattern: ${{ parameters.UITestPattern }}
+              testFolderPath: 'Tests/Playwright/ui-tests'
+
+  # Deploy to QA_MVI_DDRW002 after DV_MVI_DDRW002
+  - stage: Deploy_QA_MVI_DDRW002
+    dependsOn: Deploy_DV_MVI_DDRW002
+    condition: succeeded()
+    variables:
+      - group: ManageIISTrue
+      - group: ClientPortalPREUAT
+    jobs:
+      - template: deploy.yml
+        parameters:
+          azureSubscription: 'allpay-QUA01'
+          environment: 'dd-qa-servers'
+          machineTag: 'QA-MVI-DDRW002'
+
+# Payments Hub only directs users to 1 Direct Debits environment, which is currently the PreUAT environment, so we are can't run Playwright tests against the QA-MVI environment in the pipeline.
+#  # QA-MVI Playwright Tests
+#  - stage: Test_QAMVI_Playwright
+#    displayName: 'Playwright Tests - QA-MVI'
+#    variables:
+#      - group: ClientPortalQAMVI
+#      - name: CI
+#        value: 'true'
+#    dependsOn: [build, Deploy_QA_MVI_DDRW002]
+#    condition: succeeded()
+#    jobs:
+#      - job: 'uiTests'
+#        pool:
+#          name: 'allpay-dss-uks-nonprod-large'
+#        steps:
+#          - template: playwright-test.yml
+#            parameters:
+#              azureSubscription: 'allpay-QUA01'
+#              UITestPattern: ${{ parameters.UITestPattern }}
+#              testFolderPath: 'Tests/Playwright/ui-tests'
+
+  # Deploy to Staging (WEB007) after PreUAT, only on main/hotfix branches
+  - stage: Deploy_Staging_WEB007
+    dependsOn:
+      - Deploy_DDRWPreUAT
+    condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/main'), startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/')))
+    variables:
+      - group: ManageIISFalse
+      - group: ClientPortalStaging
+    jobs:
+      - template: deploy.yml
+        parameters:
+          azureSubscription: 'allpay-TRN01'
+          environment: 'WS-STAGING'
+          machineTag: 'NP-HVE-WEB007'
+          VirtualApplication: ''
+          WebsiteName: 'allpay Portal Cloud'
+
+  # Deploy to Staging (WEB008) after PreUAT, only on main/hotfix branches
+  - stage: Deploy_Staging_WEB008
+    dependsOn:
+      - Deploy_DDRWPreUAT
+    condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/main'), startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/')))
+    variables:
+      - group: ManageIISFalse
+      - group: ClientPortalStaging
+    jobs:
+      - template: deploy.yml
+        parameters:
+          azureSubscription: 'allpay-TRN01'
+          environment: 'WS-STAGING'
+          machineTag: 'NP-HVE-WEB008'
+          VirtualApplication: ''
+          WebsiteName: 'allpay Portal Cloud'
+
+  # Deploy to Production (WEB007) after both Staging deploys, only on main/hotfix branches
+  - stage: Deploy_Production_WEB007
+    dependsOn:
+      - Deploy_Staging_WEB007
+      - Deploy_Staging_WEB008
+    condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/main'), startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/')))
+    variables:
+      - group: ManageIISFalse
+      - group: ClientPortalProduction
+    jobs:
+      - template: deploy.yml
+        parameters:
+          azureSubscription: 'allpay-PRD01'
+          environment: 'UKF-PRODUCTION'
+          machineTag: 'LV-MVE-WEB007'
+          VirtualApplication: ''
+          WebsiteName: 'allpay Portal Cloud'
+
+  # Deploy to Production (WEB008) after both Staging deploys, only on main/hotfix branches
+  - stage: Deploy_Production_WEB008
+    dependsOn:
+      - Deploy_Staging_WEB007
+      - Deploy_Staging_WEB008
+    condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/main'), startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/')))
+    variables:
+      - group: ManageIISFalse
+      - group: ClientPortalProduction
+    jobs:
+      - template: deploy.yml
+        parameters:
+          azureSubscription: 'allpay-PRD01'
+          environment: 'UKF-PRODUCTION'
+          VirtualApplication: ''
+          machineTag: 'LV-MVE-WEB008'
+          WebsiteName: 'allpay Portal Cloud'
+
+  # Deploy to Training after both Production deploys, only on main/hotfix branches (can be overridden by parameter)
+  # Deploy_Training stage
+  # ---------------------
+  # This stage deploys the Client Portal application to the Training environment.
+  #
+  # It will only run if BOTH of the following are true:
+  #   1. The build is for the 'main' branch or a branch starting with 'hotfix/'.
+  #   2. One of the following is true:
+  #        a. The 'ForceDeployTraining' parameter is set to true (manual override),
+  #        b. The pipeline has succeeded AND the 'DeployToTraining' parameter is set to true.
+  #
+  # This ensures Training deployments only happen after production releases or by explicit manual override,
+  # and never from other branches.
+  #
+  - stage: Deploy_Training
+    dependsOn:
+      - Deploy_Production_WEB007
+      - Deploy_Production_WEB008
+    condition: and(
+        or(
+          eq('${{ parameters.ForceDeployTraining }}', true),
+          and(
+            succeeded(),
+            eq('${{ parameters.DeployToTraining }}', 'true')
+          )
+        ),
+        or(
+          eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+          startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix/')
+        )
+      )
+    variables:
+      - group: ManageIISFalse
+      - group: ClientPortalTraining
+    jobs:
+      - template: deploy-training.yml
+        parameters:
+          azureSubscription: 'allpay-PRD01'
+          environment: 'WS-TRAINING'
+          machineTag: 'TVI-CAT-APP'
+
+  # Post-deployment stage: runs after both Production deploys to set retention and commit tags
+  - stage: postDeploy
+    dependsOn:
+      - Deploy_Production_WEB008
+      - Deploy_Production_WEB007
+    pool:
+      vmImage: 'windows-2025'
+    jobs:
+      - job: postDeploy
+        displayName: 'retain and tag'
+        steps:
+          - template: set-build-retention.yml@templates
+          - template: set-commit-tag.yml@templates

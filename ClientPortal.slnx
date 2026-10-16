@@ -1,0 +1,28 @@
+<Solution>
+  <Folder Name="/Deployment/">
+    <File Path="azure-pipelines.yml" />
+    <File Path="deploy.yml" />
+    <File Path="playwright-test.yml" />
+  </Folder>
+  <Folder Name="/Source/">
+    <Project Path="Architecture/Architecture.csproj" Id="f8b55a7d-1936-43e2-a5a7-0f4f367dc1cb" />
+    <Project Path="Authorization/Authorization.csproj" Id="83fe76f4-722d-427a-b7d1-b6c90fef2522" />
+    <Project Path="ClaimsAuthentication/ClaimsAuthentication.csproj" Id="8f5421b3-47ff-420e-a91a-57722ee29e45" />
+    <Project Path="ClientPortal/ClientPortalWebsite.csproj" Id="22152bac-2eb5-453f-807d-3849f37ce983">
+      <BuildDependency Project="RoleConstants/RoleConstants.csproj" />
+      <BuildDependency Project="ScheduleAmendmentClient/ScheduleAmendmentClient.csproj" />
+      <BuildDependency Project="UserManagementClient/UserManagementClient.csproj" />
+    </Project>
+    <Project Path="Models/Models.csproj" Id="ec8e09b9-3e3f-4292-9144-a807bba46862" />
+    <Project Path="RealmConstants/RealmConstants.csproj" Id="67a37ab6-05eb-4df3-93be-626f9daab9d4" />
+    <Project Path="RoleConstants/RoleConstants.csproj" Id="851f9a59-6359-4acf-97fc-8901cfd84db6" />
+    <Project Path="ScheduleAmendmentClient/ScheduleAmendmentClient.csproj" Id="9d058e02-8c60-4ea3-a1b4-4a45fce940b8" />
+    <Project Path="UserManagementClient/UserManagementClient.csproj" Id="d9b48397-ce5b-4998-9994-88937ded1ce9" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="ClientPortalWebsite.Tests/ClientPortalWebsite.Tests.csproj" Id="24095a6c-6e33-4935-9fb0-4ad7d535e985">
+      <BuildDependency Project="RoleConstants/RoleConstants.csproj" />
+    </Project>
+    <Project Path="HostedWebServices/HostedWebServices.csproj" Id="587028c1-b519-4c7e-ae1e-6bc6ff0efdf0" />
+  </Folder>
+</Solution>

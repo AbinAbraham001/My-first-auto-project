@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="Code Coverage" uri="datacollector://Microsoft/CodeCoverage/2.0" assemblyQualifiedName="Microsoft.VisualStudio.Coverage.DynamicCoverageDataCollector, Microsoft.VisualStudio.TraceCollector, Version=11.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+        <Configuration>
+          <CodeCoverage>
+            <ModulePaths>
+              <Include>
+                <ModulePath>.*allpay\.Bacs\.ClientPortal\..*\.dll</ModulePath>
+              </Include>
+              <Exclude>
+                <ModulePath>.*moq\.dll</ModulePath>
+                <ModulePath>.*mstest\..*\.dll</ModulePath>
+                <ModulePath>.*Microsoft\.VisualStudio\..*\.dll</ModulePath>
+                <ModulePath>.*nunit\..*\.dll</ModulePath>
+                <ModulePath>.*xunit\..*\.dll</ModulePath>
+                <ModulePath>.*castle\..*\.dll</ModulePath>
+                <ModulePath>.*newtonsoft\..*\.dll</ModulePath>
+                <ModulePath>.*system\..*\.dll</ModulePath>
+                <ModulePath>.*mscorlib\.dll</ModulePath>
+              </Exclude>
+            </ModulePaths>
+            <UseVerifiableInstrumentation>True</UseVerifiableInstrumentation>
+            <AllowLowIntegrityProcesses>True</AllowLowIntegrityProcesses>
+            <CollectFromChildProcesses>True</CollectFromChildProcesses>
+            <CollectAspDotNet>False</CollectAspDotNet>
+          </CodeCoverage>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
